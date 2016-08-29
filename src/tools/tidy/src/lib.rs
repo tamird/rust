@@ -53,6 +53,7 @@ fn filter_dirs(path: &Path) -> bool {
         "src/binaryen",
         "src/dlmalloc",
         "src/jemalloc",
+        "src/lld",
         "src/llvm",
         "src/libbacktrace",
         "src/libcompiler_builtins",

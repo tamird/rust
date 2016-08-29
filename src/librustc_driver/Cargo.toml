@@ -23,6 +23,7 @@ rustc_data_structures = { path = "../librustc_data_structures" }
 rustc_errors = { path = "../librustc_errors" }
 rustc_incremental = { path = "../librustc_incremental" }
 rustc_lint = { path = "../librustc_lint" }
+rustc_llvm = { path = "../librustc_llvm", optional = true }
 rustc_metadata = { path = "../librustc_metadata" }
 rustc_mir = { path = "../librustc_mir" }
 rustc_passes = { path = "../librustc_passes" }
@@ -41,4 +42,5 @@ syntax_pos = { path = "../libsyntax_pos" }
 ar = "0.3.0"
 
 [features]
+lld = ["rustc_llvm/lld", "rustc_trans/lld"]
 llvm = ["rustc_trans"]

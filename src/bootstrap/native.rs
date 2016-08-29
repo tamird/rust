@@ -135,6 +135,10 @@ impl Step for Llvm {
            .define("LLVM_TARGET_ARCH", target.split('-').next().unwrap())
            .define("LLVM_DEFAULT_TARGET_TRIPLE", target);
 
+        if build.config.lld {
+            cfg.define("LLVM_EXTERNAL_LLD_SOURCE_DIR", build.src.join("src/lld"));
+            cfg.define("LLVM_EXTERNAL_PROJECTS", "lld");
+        }
 
         // This setting makes the LLVM tools link to the dynamic LLVM library,
         // which saves both memory during parallel links and overall disk space

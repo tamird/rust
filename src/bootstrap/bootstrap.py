@@ -649,7 +649,9 @@ class RustBuild(object):
                                self.get_toml('llvm-config')) or
                               (module.endswith("jemalloc") and
                                (self.get_toml('use-jemalloc') == "false" or
-                                self.get_toml('jemalloc'))))]
+                                self.get_toml('jemalloc'))) or
+                              (module.endswith("lld") and
+                               (self.get_toml('lld'))))]
         run(["git", "submodule", "update",
              "--init", "--recursive"] + submodules,
             cwd=self.rust_root, verbose=self.verbose)

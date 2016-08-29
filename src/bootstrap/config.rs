@@ -68,6 +68,7 @@ pub struct Config {
     pub incremental: bool,
 
     // llvm codegen options
+    pub lld: bool,
     pub llvm_enabled: bool,
     pub llvm_assertions: bool,
     pub llvm_optimize: bool,
@@ -221,6 +222,7 @@ struct Llvm {
     enabled: Option<bool>,
     ccache: Option<StringOrBool>,
     ninja: Option<bool>,
+    lld: Option<bool>,
     assertions: Option<bool>,
     optimize: Option<bool>,
     release_debuginfo: Option<bool>,
@@ -439,6 +441,7 @@ impl Config {
                 Some(StringOrBool::Bool(false)) | None => {}
             }
             set(&mut config.ninja, llvm.ninja);
+            set(&mut config.lld, llvm.lld);
             set(&mut config.llvm_enabled, llvm.enabled);
             llvm_assertions = llvm.assertions;
             set(&mut config.llvm_optimize, llvm.optimize);

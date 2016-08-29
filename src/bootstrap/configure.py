@@ -59,6 +59,7 @@ o("llvm-version-check", "llvm.version-check", "check if the LLVM version is supp
 o("codegen-tests", "rust.codegen-tests", "run the src/test/codegen tests")
 o("option-checking", None, "complain about unrecognized options in this configure script")
 o("ninja", "llvm.ninja", "build LLVM using the Ninja generator (for MSVC, requires building in the correct environment)")
+o("lld", "llvm.lld", "Build and embed lld, the LLVM linker, into rustc")
 o("locked-deps", "build.locked-deps", "force Cargo.lock to be up to date")
 o("vendor", "build.vendor", "enable usage of vendored Rust crates")
 o("sanitizers", "build.sanitizers", "build the sanitizer runtimes (asan, lsan, msan, tsan)")

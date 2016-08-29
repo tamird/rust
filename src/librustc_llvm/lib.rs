@@ -41,10 +41,12 @@ pub use self::CodeGenOptSize::*;
 pub use self::CallConv::*;
 pub use self::Linkage::*;
 
-use std::str::FromStr;
-use std::slice;
-use std::ffi::{CString, CStr};
+use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::ffi::{CString, CStr};
+use std::slice;
+use std::str::FromStr;
+
 use libc::{c_uint, c_char, size_t};
 
 pub mod archive_ro;
@@ -424,5 +426,15 @@ impl Drop for OperandBundleDef {
         unsafe {
             LLVMRustFreeOperandBundleDef(self.inner);
         }
+    }
+}
+
+pub fn RustElfLink(args: &[CString]) -> bool {
+    let args = args.iter()
+        .map(Borrow::borrow)
+        .map(CStr::as_ptr)
+        .collect::<Vec<_>>();
+    unsafe {
+        ffi::LldRustElfLink(args.as_ptr(), args.len() as u32)
     }
 }

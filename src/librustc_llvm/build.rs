@@ -83,7 +83,6 @@ fn main() {
     // can't trust all the output of llvm-config becaues it might be targeted
     // for the host rather than the target. As a result a bunch of blocks below
     // are gated on `if !is_crossed`
-    let target = env::var("TARGET").expect("TARGET was not set");
     let host = env::var("HOST").expect("HOST was not set");
     let is_crossed = target != host;
 
@@ -109,21 +108,31 @@ fn main() {
 
     // FIXME: surely we don't need all these components, right? Stuff like mcjit
     //        or interpreter the compiler itself never uses.
-    let required_components = &["ipo",
-                                "bitreader",
-                                "bitwriter",
-                                "linker",
-                                "asmparser",
-                                "mcjit",
-                                "lto",
-                                "interpreter",
-                                "instrumentation"];
+    let mut required_components = vec![
+      "asmparser",
+      "bitreader",
+      "bitwriter",
+      "instrumentation",
+      "interpreter",
+      "ipo",
+      "linker",
+      "lto",
+      "mcjit",
+    ];
+
+    // See https://github.com/llvm-mirror/lld/blob/release_40/ELF/CMakeLists.txt
+    #[cfg(feature = "lld")]
+    required_components.extend(&[
+      "debuginfodwarf",
+      "option",
+      "passes",
+    ]);
 
     let components = output(Command::new(&llvm_config).arg("--components"));
     let mut components = components.split_whitespace().collect::<Vec<_>>();
     components.retain(|c| optional_components.contains(c) || required_components.contains(c));
 
-    for component in required_components {
+    for component in &required_components {
         if !components.contains(component) {
             panic!("require llvm component {} but wasn't found", component);
         }
@@ -164,12 +173,24 @@ fn main() {
     }
 
     build_helper::rerun_if_changed_anything_in_dir(Path::new("../rustllvm"));
-    cfg.file("../rustllvm/PassWrapper.cpp")
-       .file("../rustllvm/RustWrapper.cpp")
-       .file("../rustllvm/ArchiveWrapper.cpp")
-       .cpp(true)
+    cfg.cpp(true)
        .cpp_link_stdlib(None) // we handle this below
-       .compile("librustllvm.a");
+       .file("../rustllvm/PassWrapper.cpp")
+       .file("../rustllvm/RustWrapper.cpp")
+       .file("../rustllvm/ArchiveWrapper.cpp");
+
+    #[cfg(feature = "lld")]
+    {
+        build_helper::rerun_if_changed_anything_in_dir(Path::new("../rustlld"));
+
+        cfg.file("../rustlld/RustWrapper.cpp");
+
+        println!("cargo:rustc-link-lib=static=lldCore");
+        println!("cargo:rustc-link-lib=static=lldConfig");
+        println!("cargo:rustc-link-lib=static=lldELF");
+    }
+
+    cfg.compile("librustllvm.a");
 
     let (llvm_kind, llvm_link_arg) = detect_llvm_link(major, minor, &llvm_config);
 

@@ -1731,4 +1731,7 @@ extern "C" {
         Identifier: *const c_char,
     ) -> ModuleRef;
     pub fn LLVMGetModuleIdentifier(M: ModuleRef, size: *mut usize) -> *const c_char;
+
+    #[cfg(feature = "lld")]
+    pub fn LldRustElfLink(Args: *const *const c_char, NumArgs: c_uint) -> bool;
 }

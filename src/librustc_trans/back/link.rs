@@ -34,7 +34,7 @@ use llvm;
 use std::ascii;
 use std::char;
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{CString, OsString};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Write, BufWriter};
@@ -302,6 +302,14 @@ fn link_binary_output(sess: &Session,
             }
             _ => {
                 link_natively(sess, crate_type, &out_filename, trans, tmpdir.path());
+
+                // On macOS, debuggers need this utility to get run to do some
+                // munging of the symbols
+                if sess.target.target.options.is_like_osx && sess.opts.debuginfo != NoDebugInfo {
+                    if let Err(e) = Command::new("dsymutil").arg(&out_filename).output() {
+                        sess.fatal(&format!("failed to run dsymutil: {}", e));
+                    }
+                }
             }
         }
         out_filenames.push(out_filename);
@@ -628,6 +636,22 @@ fn link_natively(sess: &Session,
     // May have not found libraries in the right formats.
     sess.abort_if_errors();
 
+    #[cfg(feature = "lld")]
+    {
+        if sess.opts.debugging_opts.use_lld {
+            let args = format!("{:?}", &cmd)
+                .split_whitespace()
+                .map(|s| s.trim_matches('"'))
+                .filter(|s| s != '-Xlinker')
+                .map(|s| CString::new(s).unwrap())
+                .collect::<Vec<_>>();
+            if !llvm::RustElfLink(&args[..]) {
+                sess.fatal(&format!("failed to run lld: {:?}", &args[..]));
+            }
+            return
+        }
+    }
+
     // Invoke the system linker
     //
     // Note that there's a terribly awful hack that really shouldn't be present
@@ -717,16 +741,6 @@ fn link_natively(sess: &Session,
                     with the Visual C++ option");
             }
             sess.abort_if_errors();
-        }
-    }
-
-
-    // On macOS, debuggers need this utility to get run to do some munging of
-    // the symbols
-    if sess.target.target.options.is_like_osx && sess.opts.debuginfo != NoDebugInfo {
-        match Command::new("dsymutil").arg(out_filename).output() {
-            Ok(..) => {}
-            Err(e) => sess.fatal(&format!("failed to run dsymutil: {}", e)),
         }
     }
 }

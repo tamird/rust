@@ -2,6 +2,10 @@
 	path = src/llvm
 	url = https://github.com/rust-lang/llvm.git
 	branch = master
+[submodule "src/lld"]
+	path = src/lld
+	url = git://github.com/llvm-mirror/lld.git
+	branch = release_40
 [submodule "src/rt/hoedown"]
 	path = src/rt/hoedown
 	url = https://github.com/rust-lang/hoedown.git
