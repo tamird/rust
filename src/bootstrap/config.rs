@@ -304,6 +304,7 @@ impl Config {
         let flags = Flags::parse(&args);
         let file = flags.config.clone();
         let mut config = Config::default();
+        config.lld = true;
         config.llvm_enabled = true;
         config.llvm_optimize = true;
         config.llvm_version_check = true;
