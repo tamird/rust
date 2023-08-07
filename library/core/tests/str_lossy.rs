@@ -82,4 +82,5 @@ fn debug() {
             Utf8Chunks::new(b"Hello\xC0\x80 There\xE6\x83 Goodbye\xf4\x8d\x93\xaa").debug(),
         ),
     );
+    assert_eq!("\"'\"", &format!("{:?}", Utf8Chunks::new(b"'").debug()));
 }

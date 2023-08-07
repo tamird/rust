@@ -177,3 +177,9 @@ fn into_rc() {
     assert_eq!(&*rc2, os_str);
     assert_eq!(&*arc2, os_str);
 }
+
+#[test]
+fn debug() {
+    let s = "'single quotes'";
+    assert_eq!(format!("{:?}", OsStr::new(s)), format!("{:?}", s));
+}

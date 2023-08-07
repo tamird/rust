@@ -530,14 +530,16 @@ impl AsInner<[u8]> for Wtf8 {
 impl fmt::Debug for Wtf8 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn write_str_escaped(f: &mut fmt::Formatter<'_>, s: &str) -> fmt::Result {
-            use crate::fmt::Write;
+            use crate::fmt::Write as _;
+            // This doesn't match the behavior of `<str as Debug>::fmt` because it escapes single
+            // quotes. Should it match? See https://github.com/rust-lang/rust/issues/83046.
             for c in s.chars().flat_map(|c| c.escape_debug()) {
                 f.write_char(c)?
             }
             Ok(())
         }
 
-        formatter.write_str("\"")?;
+        formatter.write_char('"')?;
         let mut pos = 0;
         while let Some((surrogate_pos, surrogate)) = self.next_surrogate(pos) {
             write_str_escaped(formatter, unsafe {
@@ -547,7 +549,7 @@ impl fmt::Debug for Wtf8 {
             pos = surrogate_pos + 3;
         }
         write_str_escaped(formatter, unsafe { str::from_utf8_unchecked(&self.bytes[pos..]) })?;
-        formatter.write_str("\"")
+        formatter.write_char('"')
     }
 }
 
