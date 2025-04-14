@@ -32,13 +32,58 @@ pub enum Count {
     Implied,
 }
 
+trait NoopDebug {
+    fn fmt(&self, _: &mut Formatter<'_>) -> Result;
+}
+
+impl<T> NoopDebug for T {
+    fn fmt(&self, _: &mut Formatter<'_>) -> Result {
+        Ok(())
+    }
+}
+
+#[cfg_attr(any(sanitize = "cfi", sanitize = "kcfi"), allow(dead_code))]
 #[derive(Copy, Clone)]
-struct FormatterThunk<'a> {
+struct FormatterThunkNotCFI<'a> {
     // INVARIANT: `formatter` has type `fn(&T, _) -> _` for some `T`, and `value`
     // was derived from a `&'a T`.
     value: NonNull<()>,
     formatter: unsafe fn(NonNull<()>, &mut Formatter<'_>) -> Result,
     _lifetime: PhantomData<&'a ()>,
+}
+
+#[cfg_attr(not(any(sanitize = "cfi", sanitize = "kcfi")), allow(dead_code))]
+#[derive(Copy, Clone)]
+enum FormatterThunkCFI<'a> {
+    Display(&'a dyn Display),
+    Debug(&'a dyn Debug),
+    NoopDebug(&'a dyn NoopDebug),
+    Octal(&'a dyn Octal),
+    LowerHex(&'a dyn LowerHex),
+    UpperHex(&'a dyn UpperHex),
+    Pointer(&'a dyn Pointer),
+    Binary(&'a dyn Binary),
+    LowerExp(&'a dyn LowerExp),
+    UpperExp(&'a dyn UpperExp),
+}
+
+#[cfg_attr(not(any(sanitize = "cfi", sanitize = "kcfi")), allow(dead_code))]
+impl FormatterThunkCFI<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Display(value) => Display::fmt(value, f),
+            Self::Debug(value) => Debug::fmt(value, f),
+            Self::NoopDebug(value) => NoopDebug::fmt(value, f),
+            Self::Octal(value) => Octal::fmt(value, f),
+            Self::LowerHex(value) => LowerHex::fmt(value, f),
+            Self::UpperHex(value) => UpperHex::fmt(value, f),
+            Self::Pointer(value) => Pointer::fmt(value, f),
+            Self::Binary(value) => Binary::fmt(value, f),
+            Self::LowerExp(value) => LowerExp::fmt(value, f),
+            Self::UpperExp(value) => UpperExp::fmt(value, f),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -63,47 +108,50 @@ pub struct Argument<'a> {
     ty: ArgumentType<'a>,
 }
 
+#[cfg(any(sanitize = "cfi", sanitize = "kcfi"))]
+use FormatterThunkCFI as FormatterThunk;
+#[cfg(not(any(sanitize = "cfi", sanitize = "kcfi")))]
+use FormatterThunkNotCFI as FormatterThunk;
+
 macro_rules! thunk_new {
-    ($t:ty, $x:expr, $f:expr) => {
-        // INVARIANT: this creates a `FormatterThunk<'a>` from a `&'a T` and
-        // a `fn(&T, ...)`, so the invariant is maintained.
-        FormatterThunk {
-            value: NonNull::<$t>::from_ref($x).cast(),
-            // The Rust ABI considers all pointers to be equivalent, so transmuting a fn(&T) to
-            // fn(NonNull<()>) and calling it with a NonNull<()> that points at a T is allowed.
-            // However, the CFI sanitizer does not allow this, and triggers a crash when it
-            // happens.
-            //
-            // To avoid this crash, we use a helper function when CFI is enabled. To avoid the
-            // cost of this helper function (mainly code-size) when it is not needed, we
-            // transmute the function pointer otherwise.
-            //
-            // This is similar to what the Rust compiler does internally with vtables when KCFI
-            // is enabled, where it generates trampoline functions that only serve to adjust the
-            // expected type of the argument. `FormatterThunk` is a bit like a
-            // manually constructed trait object, so it is not surprising that the same approach
-            // has to be applied here as well.
-            //
-            // It is still considered problematic (from the Rust side) that CFI rejects entirely
-            // legal Rust programs, so we do not consider anything done here a stable guarantee,
-            // but meanwhile we carry this work-around to keep Rust compatible with CFI and
-            // KCFI.
-            #[cfg(not(any(sanitize = "cfi", sanitize = "kcfi")))]
-            formatter: {
-                let f: fn(&$t, &mut Formatter<'_>) -> Result = $f;
-                // SAFETY: This is only called with `value`, which has the right type.
-                unsafe { core::mem::transmute(f) }
-            },
-            #[cfg(any(sanitize = "cfi", sanitize = "kcfi"))]
-            formatter: |ptr: NonNull<()>, fmt: &mut Formatter<'_>| {
-                let func = $f;
-                // SAFETY: This is the same type as the `value` field.
-                let r = unsafe { ptr.cast::<$t>().as_ref() };
-                (func)(r, fmt)
-            },
-            _lifetime: PhantomData,
+    ($t:ty, $x:expr, $trait:ident) => {{
+        // The Rust ABI considers all pointers to be equivalent, so transmuting a fn(&T) to
+        // fn(NonNull<()>) and calling it with a NonNull<()> that points at a T is allowed.
+        // However, the CFI sanitizer does not allow this, and triggers a crash when it
+        // happens.
+        //
+        // To avoid this crash, we use an enum with trait objects when CFI is enabled. To avoid the
+        // cost of this enum (an additional layer of static dispatch) when it is not needed, we
+        // transmute the function pointer otherwise.
+        //
+        // It is still considered problematic (from the Rust side) that CFI rejects entirely
+        // legal Rust programs, so we do not consider anything done here a stable guarantee,
+        // but meanwhile we carry this work-around to keep Rust compatible with CFI and
+        // KCFI.
+
+        #[cfg(not(any(sanitize = "cfi", sanitize = "kcfi")))]
+        {
+            // INVARIANT: this creates a `FormatterThunk<'a>` from a `&'a T` and
+            // a `fn(&T, ...)`, so the invariant is maintained.
+            FormatterThunk {
+                value: {
+                    let x: &$t = $x;
+                    NonNull::from_ref(x).cast()
+                },
+                formatter: {
+                    let f: fn(&$t, &mut Formatter<'_>) -> Result = $trait::fmt;
+                    // SAFETY: This is only called with `value`, which has the right type.
+                    unsafe { core::mem::transmute(f) }
+                },
+                _lifetime: PhantomData,
+            }
         }
-    };
+
+        #[cfg(any(sanitize = "cfi", sanitize = "kcfi"))]
+        {
+            FormatterThunk::$trait($x)
+        }
+    }};
 }
 
 impl Argument<'_> {
@@ -113,43 +161,43 @@ impl Argument<'_> {
     }
     #[inline]
     pub fn new_display<T: Display>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, Display::fmt))
+        Self::new(thunk_new!(T, x, Display))
     }
     #[inline]
     pub fn new_debug<T: Debug>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, Debug::fmt))
+        Self::new(thunk_new!(T, x, Debug))
     }
     #[inline]
     pub fn new_debug_noop<T: Debug>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, |_: &T, _| Ok(())))
+        Self::new(thunk_new!(T, x, NoopDebug))
     }
     #[inline]
     pub fn new_octal<T: Octal>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, Octal::fmt))
+        Self::new(thunk_new!(T, x, Octal))
     }
     #[inline]
     pub fn new_lower_hex<T: LowerHex>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, LowerHex::fmt))
+        Self::new(thunk_new!(T, x, LowerHex))
     }
     #[inline]
     pub fn new_upper_hex<T: UpperHex>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, UpperHex::fmt))
+        Self::new(thunk_new!(T, x, UpperHex))
     }
     #[inline]
     pub fn new_pointer<T: Pointer>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, Pointer::fmt))
+        Self::new(thunk_new!(T, x, Pointer))
     }
     #[inline]
     pub fn new_binary<T: Binary>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, Binary::fmt))
+        Self::new(thunk_new!(T, x, Binary))
     }
     #[inline]
     pub fn new_lower_exp<T: LowerExp>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, LowerExp::fmt))
+        Self::new(thunk_new!(T, x, LowerExp))
     }
     #[inline]
     pub fn new_upper_exp<T: UpperExp>(x: &T) -> Argument<'_> {
-        Self::new(thunk_new!(T, x, UpperExp::fmt))
+        Self::new(thunk_new!(T, x, UpperExp))
     }
     #[inline]
     #[track_caller]
@@ -175,7 +223,8 @@ impl Argument<'_> {
     }
 }
 
-impl FormatterThunk<'_> {
+#[cfg_attr(any(sanitize = "cfi", sanitize = "kcfi"), allow(dead_code))]
+impl FormatterThunkNotCFI<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let Self { value, formatter, _lifetime } = self;
         // SAFETY:
